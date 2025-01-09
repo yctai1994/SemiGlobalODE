@@ -33,20 +33,15 @@ md"---"
 function num_recipes_chebyshev_coeff(
 	func::Function, a::Real, b::Real, n:: Int
 )
-	bpa = 0.5 * (b + a) # right_bound + left_bound
-	bma = 0.5 * (b - a) # right_bound - left_bound
+	apb = 0.5 * (a + b) # left_bound + right_bound
+	amb = 0.5 * (a - b) # left_bound - right_bound
 
 	x = Vector{Float64}(undef, n)
 	f = Vector{Float64}(undef, n)
 	c = Vector{Float64}(undef, n)
 
-	# for k in 0:n-1
-	# 	x[k+1] = cos(pi * (k + 0.5) / n) * bma + bpa
-	# 	f[k+1] = func(x[k+1])
-	# end
-
 	for k in 1:n
-		x[k] = cos(pi * (2k - 1) / (2n)) * bma + bpa
+		x[k] = cos(pi * (2k - 1) / (2n)) * amb + apb
 		f[k] = func(x[k])
 	end
 
@@ -59,13 +54,16 @@ function num_recipes_chebyshev_coeff(
 		c[j+1] = fac * tot
 	end
 
-	return c
+	return x, f, c
 end
 
 # ╔═╡ d5c055d8-fa44-4f87-9d04-30e789f343ff
-num_recipes_c = num_recipes_chebyshev_coeff(
-	test_func, 0.0, global_test_xarr[end], 101
+# ╠═╡ disabled = true
+#=╠═╡
+temp_x, temp_f, num_recipes_c = num_recipes_chebyshev_coeff(
+	test_func, 0.0, global_test_xarr[end], 1 << 7
 )
+  ╠═╡ =#
 
 # ╔═╡ f82eaceb-821f-41df-8d1e-6f32cc3c09ec
 function num_recipes_chebyshev_eval(
@@ -98,9 +96,13 @@ end
 md"---"
 
 # ╔═╡ c72c4e0a-ccc2-4bbf-ab91-3b1f6e80aea6
+# ╠═╡ disabled = true
+#=╠═╡
 num_recipes_x = collect(range(start = 0.0, step = 1e1, stop = 1e3))
+  ╠═╡ =#
 
 # ╔═╡ 84dbe091-49b6-496d-ab24-1ddfd932eaf3
+#=╠═╡
 num_recipes_y = let yarr = similar(num_recipes_x)
 	@inbounds for i in eachindex(yarr)
 		yarr[i] = num_recipes_chebyshev_eval(
@@ -112,12 +114,24 @@ num_recipes_y = let yarr = similar(num_recipes_x)
 	end
 	yarr
 end
+  ╠═╡ =#
+
+# ╔═╡ 6931c353-8668-467a-972c-867ef3d579be
+#=╠═╡
+num_recipes_e = let earr = similar(num_recipes_x)
+	@inbounds for i in eachindex(earr)
+		earr[i] = abs(num_recipes_y[i] - test_func(num_recipes_x[i]))
+	end
+	earr
+end
+  ╠═╡ =#
 
 # ╔═╡ c61fc524-01af-4f49-b622-bff9211dc2e8
 md"---"
 
 # ╔═╡ 37efcab2-4827-48c2-9311-f2c1efed8297
-let fig = cm.Figure()
+#=╠═╡
+let fig = cm.Figure(; size = (600, 800))
 	ax1 = cm.Axis(fig[1,1];
 		limits = (global_test_xarr[1], global_test_xarr[end], -0.105, 0.105,),
 		xticks = collect(range(
@@ -135,8 +149,24 @@ let fig = cm.Figure()
 		color = (:firebrick, 0.5),
 		markercolor = (:firebrick, 0.5),
 	)
+
+	ax2 = cm.Axis(fig[2,1];
+		limits = (global_test_xarr[1], global_test_xarr[end], nothing, nothing,),
+		xticks = collect(range(
+			start = global_test_xarr[1],
+			step = 100,
+			stop = global_test_xarr[end],
+		)),
+	)
+	cm.scatterlines!(ax2,
+		num_recipes_x, num_recipes_e;
+		color = (:firebrick, 0.5),
+		markercolor = (:firebrick, 0.5),
+	)
+
 	fig
 end
+  ╠═╡ =#
 
 # ╔═╡ Cell order:
 # ╠═79d44ed1-3968-4372-a96c-38dc8f87440a
@@ -144,11 +174,12 @@ end
 # ╟─192519a8-c953-4049-be72-2e90ae695e1d
 # ╟─71cc131e-8f37-4104-9123-e15ddb2856ab
 # ╟─d1f77238-dc23-4441-84bf-aec4b7586c34
-# ╟─f05169ec-cc4f-11ef-2aed-3d58cadc3837
+# ╠═f05169ec-cc4f-11ef-2aed-3d58cadc3837
 # ╠═d5c055d8-fa44-4f87-9d04-30e789f343ff
-# ╠═f82eaceb-821f-41df-8d1e-6f32cc3c09ec
+# ╟─f82eaceb-821f-41df-8d1e-6f32cc3c09ec
 # ╟─02af5007-404e-4bef-891b-a7ec0c8a35ef
-# ╟─c72c4e0a-ccc2-4bbf-ab91-3b1f6e80aea6
-# ╠═84dbe091-49b6-496d-ab24-1ddfd932eaf3
+# ╠═c72c4e0a-ccc2-4bbf-ab91-3b1f6e80aea6
+# ╟─84dbe091-49b6-496d-ab24-1ddfd932eaf3
+# ╟─6931c353-8668-467a-972c-867ef3d579be
 # ╟─c61fc524-01af-4f49-b622-bff9211dc2e8
-# ╠═37efcab2-4827-48c2-9311-f2c1efed8297
+# ╟─37efcab2-4827-48c2-9311-f2c1efed8297
