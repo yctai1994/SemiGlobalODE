@@ -8,36 +8,59 @@ using InteractiveUtils
 import LinearAlgebra as la
 
 # ╔═╡ 109c3c7c-ceb2-11ef-3483-89b230552d1f
-const A0 = [ 12.0 -51.0 4.0; 6.0 167.0 -68.0; -4.0 24.0 -41.0; ]
+const A0 = ComplexF64[
+	complex(1.0, 2.0) complex(-5.0, 1.0) complex(4.0, 0.0);
+	complex(6.0, 0.0) complex(16.0, 7.0) complex(-6.0, 8.0);
+	complex(-4.0, 0.0) complex(2.0, 4.0) complex(-4.0, 1.0);
+]
 
-# ╔═╡ 3515d200-b8ef-4149-8b59-d2dfffeb6ac9
-let A = copy(A0)
-	N = size(A, 2)
-	n = Vector{Float64}(undef, N)
+# ╔═╡ 0395bbcd-915a-48e9-8a63-64fb490bead7
+let R = copy(A0), Q = similar(R)
+	N = size(R, 2)
+	n = Vector{ComplexF64}(undef, N)
 
-	for k in 1:N
-		xk = @view(A[k:N, k])
-		nk = @view(n[k:N])
-	
-		xk_norm = la.norm(xk)
-		for i in eachindex(nk)
-			@inbounds nk[i] = xk[i] - xk_norm * ifelse(i ≡ 1, 1.0, 0.0)
+	@inbounds for j in 1:N
+		for i in 1:N
+			Q[i,j] = complex(0.0, 0.0)
 		end
-	
+		@inbounds Q[j,j] = complex(1.0, 0.0)
+	end
+
+	for k in 1:N-1
+		xk = @view(R[k:N, k])
+		nk = @view(n[k:N])
+
+		sigma = la.norm(xk)
+		phase = cis(angle(R[k,k]))
+		let tmp = sigma * phase
+			@inbounds for i in eachindex(nk)
+				nk[i] = xk[i] + tmp * ifelse(i ≡ 1, 1.0, 0.0)
+			end
+		end
+
 		nk_norm = la.norm(nk)
-		for i in eachindex(nk)
+		@inbounds for i in eachindex(nk)
 			nk[i] /= nk_norm
 		end
-	
+
 		for j in k:N
-			tmp = la.dot(nk, @view(A[k:N,j]))
+			tmp = la.dot(nk, @view(R[k:N,j]))
+			tmp *= 2.0
 			for i in k:N
-				A[i,j] -= 2.0 * n[i] * tmp
+				R[i,j] -= tmp * n[i]
+			end
+		end
+
+		for j in 1:N
+			tmp = la.dot(nk, @view(Q[k:N,j]))
+			tmp *= 2.0
+			for i in k:N
+				Q[i,j] -= tmp * n[i]
 			end
 		end
 	end
 
-	A
+	R, Q
 end
 
 # ╔═╡ a01dc808-324d-4c00-bcf5-153ad644db15
@@ -46,9 +69,9 @@ my_R, my_Q = let R = copy(A0), Q = similar(R)
 
 	@inbounds for j in 1:N
 		for i in 1:N
-			Q[i,j] = 0.0
+			Q[i,j] = complex(0.0, 0.0)
 		end
-		@inbounds Q[j,j] = 1.0
+		@inbounds Q[j,j] = complex(1.0, 0.0)
 	end
 
 	for k in 1:N-1
@@ -57,13 +80,14 @@ my_R, my_Q = let R = copy(A0), Q = similar(R)
 			R[i,k] /= scale
 		end
 
-		alpha = la.norm(@view(R[k:N,k]))
-		R[k,k] += alpha
-		alpha_beta = alpha * R[k,k]
+		sigma = la.norm(@view(R[k:N,k]))
+		phase = cis(angle(R[k,k]))
+		beta = inv(sigma * (sigma + abs(R[k,k])))
+		R[k,k] += sigma * phase
 
 		for j in k+1:N
 			tmp = la.dot(@view(R[k:N,k]), @view(R[k:N,j]))
-			tmp /= alpha_beta
+			tmp *= beta
 			for i in k:N
 				R[i,j] -= tmp * R[i,k]
 			end
@@ -71,25 +95,20 @@ my_R, my_Q = let R = copy(A0), Q = similar(R)
 
 		for j in 1:N
 			tmp = la.dot(@view(R[k:N,k]), @view(Q[k:N,j]))
-			tmp /= alpha_beta
+			tmp *= beta
 			for i in k:N
 				Q[i,j] -= tmp * R[i,k]
 			end
 		end
 
-		R[k,k] = -scale * alpha
+		R[k,k] = -scale * sigma * phase
 	end
 
 	R, Q
 end
 
-# ╔═╡ 1429728d-aa2e-4a22-8cca-4529cd3d1a6f
-ref_R, ref_Q = let QR = la.qr(copy(A0))
-	QR.R, QR.Q
-end
-
-# ╔═╡ 763a2e06-d6ad-4a6f-8c3f-e4c2fbcfd273
-my_Q * ref_Q
+# ╔═╡ 91a2d114-710c-446d-8e17-01916b936ba1
+my_Q * my_Q'
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
@@ -137,9 +156,8 @@ version = "5.11.0+0"
 # ╔═╡ Cell order:
 # ╠═a5881ab9-053c-47ac-b23c-da051ecc171d
 # ╠═109c3c7c-ceb2-11ef-3483-89b230552d1f
-# ╠═3515d200-b8ef-4149-8b59-d2dfffeb6ac9
+# ╠═0395bbcd-915a-48e9-8a63-64fb490bead7
 # ╠═a01dc808-324d-4c00-bcf5-153ad644db15
-# ╠═1429728d-aa2e-4a22-8cca-4529cd3d1a6f
-# ╠═763a2e06-d6ad-4a6f-8c3f-e4c2fbcfd273
+# ╠═91a2d114-710c-446d-8e17-01916b936ba1
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
