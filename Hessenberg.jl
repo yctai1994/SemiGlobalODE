@@ -58,6 +58,10 @@ let R = copy(A0), Q = similar(R)
 				Q[i,j] -= tmp * n[i]
 			end
 		end
+
+		@inbounds for i in k+1:N
+			R[i,k] = complex(0.0, 0.0)
+		end
 	end
 
 	R, Q
@@ -101,7 +105,10 @@ my_R, my_Q = let R = copy(A0), Q = similar(R)
 			end
 		end
 
-		R[k,k] = -scale * sigma * phase
+		@inbounds R[k,k] = -scale * sigma * phase
+		@inbounds for i in k+1:N
+			R[i,k] = complex(0.0, 0.0)
+		end
 	end
 
 	R, Q
@@ -109,6 +116,9 @@ end
 
 # ╔═╡ 91a2d114-710c-446d-8e17-01916b936ba1
 my_Q * my_Q'
+
+# ╔═╡ d0198b08-4a80-4043-8e9e-fa29db4e41a6
+my_Q' * my_R
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
@@ -156,8 +166,9 @@ version = "5.11.0+0"
 # ╔═╡ Cell order:
 # ╠═a5881ab9-053c-47ac-b23c-da051ecc171d
 # ╠═109c3c7c-ceb2-11ef-3483-89b230552d1f
-# ╠═0395bbcd-915a-48e9-8a63-64fb490bead7
-# ╠═a01dc808-324d-4c00-bcf5-153ad644db15
+# ╟─0395bbcd-915a-48e9-8a63-64fb490bead7
+# ╟─a01dc808-324d-4c00-bcf5-153ad644db15
 # ╠═91a2d114-710c-446d-8e17-01916b936ba1
+# ╠═d0198b08-4a80-4043-8e9e-fa29db4e41a6
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
