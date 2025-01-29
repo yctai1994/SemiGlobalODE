@@ -9,74 +9,24 @@ import LinearAlgebra as la
 
 # ╔═╡ 109c3c7c-ceb2-11ef-3483-89b230552d1f
 const A0 = ComplexF64[
-	complex(1.0, 2.0) complex(-5.0, 1.0) complex(4.0, 0.0);
-	complex(6.0, 0.0) complex(16.0, 7.0) complex(-6.0, 8.0);
-	complex(-4.0, 0.0) complex(2.0, 4.0) complex(-4.0, 1.0);
+	complex(1.0, 2.0) complex(-5.0, 1.0) complex(2.0, 1.0) complex(-3.0, -1.0);
+	complex(3.0, 1.0) complex(-2.0, 3.0) complex(6.0, 7.0) complex(-3.0, -4.0);
+	complex(0.0, 0.0) complex(-1.0, 5.0) complex(1.0, 2.0) complex(-1.0, -3.0);
+	complex(0.0, 0.0) complex( 0.0, 0.0) complex(7.0, 6.0) complex(-4.0, -3.0);
 ]
 
-# ╔═╡ 0395bbcd-915a-48e9-8a63-64fb490bead7
-let R = copy(A0), Q = similar(R)
-	N = size(R, 2)
-	n = Vector{ComplexF64}(undef, N)
+# ╔═╡ 8e2a472e-881f-428b-b7fe-c128b3fee75e
+function qr!(A::Matrix{T}, R::Matrix{T}, Qt::Matrix{T}) where T<:Complex
+	N = size(A, 2)
 
 	@inbounds for j in 1:N
 		for i in 1:N
-			Q[i,j] = complex(0.0, 0.0)
+			Qt[i,j] = complex(0.0, 0.0)
 		end
-		@inbounds Q[j,j] = complex(1.0, 0.0)
+		@inbounds Qt[j,j] = complex(1.0, 0.0)
 	end
 
-	for k in 1:N-1
-		xk = @view(R[k:N, k])
-		nk = @view(n[k:N])
-
-		sigma = la.norm(xk)
-		phase = cis(angle(R[k,k]))
-		let tmp = sigma * phase
-			@inbounds for i in eachindex(nk)
-				nk[i] = xk[i] + tmp * ifelse(i ≡ 1, 1.0, 0.0)
-			end
-		end
-
-		nk_norm = la.norm(nk)
-		@inbounds for i in eachindex(nk)
-			nk[i] /= nk_norm
-		end
-
-		for j in k:N
-			tmp = la.dot(nk, @view(R[k:N,j]))
-			tmp *= 2.0
-			for i in k:N
-				R[i,j] -= tmp * n[i]
-			end
-		end
-
-		for j in 1:N
-			tmp = la.dot(nk, @view(Q[k:N,j]))
-			tmp *= 2.0
-			for i in k:N
-				Q[i,j] -= tmp * n[i]
-			end
-		end
-
-		@inbounds for i in k+1:N
-			R[i,k] = complex(0.0, 0.0)
-		end
-	end
-
-	R, Q
-end
-
-# ╔═╡ a01dc808-324d-4c00-bcf5-153ad644db15
-my_R, my_Q = let R = copy(A0), Q = similar(R)
-	N = size(R, 2)
-
-	@inbounds for j in 1:N
-		for i in 1:N
-			Q[i,j] = complex(0.0, 0.0)
-		end
-		@inbounds Q[j,j] = complex(1.0, 0.0)
-	end
+	copyto!(R, A)
 
 	for k in 1:N-1
 		scale = maximum(abs, @view(R[k:N,k]))
@@ -98,10 +48,10 @@ my_R, my_Q = let R = copy(A0), Q = similar(R)
 		end
 
 		for j in 1:N
-			tmp = la.dot(@view(R[k:N,k]), @view(Q[k:N,j]))
+			tmp = la.dot(@view(R[k:N,k]), @view(Qt[k:N,j]))
 			tmp *= beta
 			for i in k:N
-				Q[i,j] -= tmp * R[i,k]
+				Qt[i,j] -= tmp * R[i,k]
 			end
 		end
 
@@ -110,15 +60,95 @@ my_R, my_Q = let R = copy(A0), Q = similar(R)
 			R[i,k] = complex(0.0, 0.0)
 		end
 	end
-
-	R, Q
 end
 
-# ╔═╡ 91a2d114-710c-446d-8e17-01916b936ba1
-my_Q * my_Q'
+# ╔═╡ 5e2b2de8-2530-480f-b911-ea8ce569bb0f
+function rq!(A::Matrix{T}, R::Matrix{T}, Qt::Matrix{T}) where T<:Complex
+	N = size(A, 2)
 
-# ╔═╡ d0198b08-4a80-4043-8e9e-fa29db4e41a6
-my_Q' * my_R
+	@inbounds for i in 1:N, j in 1:N
+		tmp = complex(0.0, 0.0)
+		for k in i:N
+			tmp += R[i,k] * conj(Qt[j,k])
+		end
+		A[i,j] = tmp
+	end
+end
+
+# ╔═╡ ee08c69d-e40c-4596-92b9-5a5cd3a294b5
+function wilkinson(A::AbstractMatrix{T}) where T<:Complex
+	m = 0.5 * (A[1,1] + A[2,2])
+	p = A[1,1] * A[2,2] - A[1,2] * A[2,1]
+
+	z2 = m * m - p
+	r = abs(z2)
+	s = sqrt(r)
+
+	θ = angle(z2)
+
+	z_plus = s * cis(0.5θ)
+	z_minus = s * cis(0.5θ + π)
+
+	eigen_minus = m + z_minus
+	eigen_plus  = m + z_plus
+
+	if abs(eigen_minus - A[2,2]) < abs(eigen_plus - A[2,2])
+		return eigen_minus
+	else
+		return eigen_plus
+	end
+end
+
+# ╔═╡ 39ce686e-e072-44b8-b35a-5c9218a2d976
+la.eigen(copy(A0))
+
+# ╔═╡ b1d7f708-8ebe-4372-a117-f4ecf21d3e88
+let _A_ = copy(A0), _R_ = similar(_A_), _Qt_ = similar(_A_)
+	N = size(_A_, 2)
+	for _ in 1:16
+		eigen_guess = wilkinson(@view(_A_[N-1:N, N-1:N]))
+		@inbounds for i in 1:N
+			_A_[i,i] -= eigen_guess
+		end
+
+		qr!(_A_, _R_, _Qt_)
+		rq!(_A_, _R_, _Qt_)
+
+		@inbounds for i in 1:N
+			_A_[i,i] += eigen_guess
+		end
+	end
+	print(_A_)
+end
+
+# ╔═╡ df96a77d-7dfd-4468-8690-c56bfc0fdf70
+md"---"
+
+# ╔═╡ 9bd88489-110a-49fd-891e-2bad132d4b70
+const B0 = ComplexF64[
+	complex(1.0, 2.0) complex(-5.0, 1.0);
+	complex(6.0, 1.0) complex(-6.0, 7.0);
+]
+
+# ╔═╡ bae57ded-9b4f-4d3d-a735-3729d8d24cf5
+la.eigen(copy(B0))
+
+# ╔═╡ 709d278d-18e6-4255-9d7c-e5142af42054
+let (m, p) = (
+	0.5 * (B0[1,1] + B0[2,2]),
+	B0[1,1] * B0[2,2] - B0[1,2] * B0[2,1],
+)
+	z2 = m * m - p
+	r = abs(z2)
+	s = sqrt(r)
+
+	θ = angle(z2)
+
+	z_plus = s * cis(0.5θ)
+	z_minus = s * cis(0.5θ + π)
+
+	m + z_minus, m + z_plus
+end
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
@@ -130,7 +160,7 @@ LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 PLUTO_MANIFEST_TOML_CONTENTS = """
 # This file is machine-generated - editing it directly is not advised
 
-julia_version = "1.11.2"
+julia_version = "1.11.3"
 manifest_format = "2.0"
 project_hash = "ac1187e548c6ab173ac57d4e72da1620216bce54"
 
@@ -165,10 +195,15 @@ version = "5.11.0+0"
 
 # ╔═╡ Cell order:
 # ╠═a5881ab9-053c-47ac-b23c-da051ecc171d
-# ╠═109c3c7c-ceb2-11ef-3483-89b230552d1f
-# ╟─0395bbcd-915a-48e9-8a63-64fb490bead7
-# ╟─a01dc808-324d-4c00-bcf5-153ad644db15
-# ╠═91a2d114-710c-446d-8e17-01916b936ba1
-# ╠═d0198b08-4a80-4043-8e9e-fa29db4e41a6
+# ╟─109c3c7c-ceb2-11ef-3483-89b230552d1f
+# ╟─8e2a472e-881f-428b-b7fe-c128b3fee75e
+# ╟─5e2b2de8-2530-480f-b911-ea8ce569bb0f
+# ╟─ee08c69d-e40c-4596-92b9-5a5cd3a294b5
+# ╠═39ce686e-e072-44b8-b35a-5c9218a2d976
+# ╠═b1d7f708-8ebe-4372-a117-f4ecf21d3e88
+# ╟─df96a77d-7dfd-4468-8690-c56bfc0fdf70
+# ╠═9bd88489-110a-49fd-891e-2bad132d4b70
+# ╠═bae57ded-9b4f-4d3d-a735-3729d8d24cf5
+# ╠═709d278d-18e6-4255-9d7c-e5142af42054
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
