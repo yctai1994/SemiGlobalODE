@@ -9,18 +9,22 @@ import LinearAlgebra as la
 
 # ╔═╡ 109c3c7c-ceb2-11ef-3483-89b230552d1f
 const A0 = ComplexF64[
-	complex(1.0, 2.0) complex(-5.0, 1.0) complex(2.0, 1.0) complex(-3.0, -1.0);
-	complex(3.0, 1.0) complex(-2.0, 3.0) complex(6.0, 7.0) complex(-3.0, -4.0);
-	complex(0.0, 0.0) complex(-1.0, 5.0) complex(1.0, 2.0) complex(-1.0, -3.0);
-	complex(0.0, 0.0) complex( 0.0, 0.0) complex(7.0, 6.0) complex(-4.0, -3.0);
+	1.0+2.0im 5.0+1.0im 2.0+1.0im -3.0-1.0im 1.0+2.0im;
+	3.0+1.0im 2.0+3.0im 6.0+7.0im -3.0-4.0im 1.0+5.0im;
+	0.0+0.0im 1.0+5.0im 1.0+2.0im -1.0-3.0im 1.0+7.0im;
+	0.0+0.0im 0.0+0.0im 7.0+6.0im -4.0-3.0im 3.0+1.0im;
+	0.0+0.0im 0.0+0.0im 0.0+0.0im -2.0-2.0im 5.0+1.0im;
 ]
 
 # ╔═╡ 8e2a472e-881f-428b-b7fe-c128b3fee75e
-function qr!(A::Matrix{T}, R::Matrix{T}, Qt::Matrix{T}) where T<:Complex
-	N = size(A, 2)
-
-	@inbounds for j in 1:N
-		for i in 1:N
+function qr!(
+	A::AbstractMatrix{T},
+	R::AbstractMatrix{T},
+	Qt::AbstractMatrix{T},
+	n::Int
+) where T<:Complex
+	@inbounds for j in 1:n
+		for i in 1:n
 			Qt[i,j] = complex(0.0, 0.0)
 		end
 		@inbounds Qt[j,j] = complex(1.0, 0.0)
@@ -28,47 +32,50 @@ function qr!(A::Matrix{T}, R::Matrix{T}, Qt::Matrix{T}) where T<:Complex
 
 	copyto!(R, A)
 
-	for k in 1:N-1
-		scale = maximum(abs, @view(R[k:N,k]))
-		@inbounds for i in k:N
+	for k in 1:n
+		scale = maximum(abs, @view(R[k:n,k]))
+		@inbounds for i in k:n
 			R[i,k] /= scale
 		end
 
-		sigma = la.norm(@view(R[k:N,k]))
+		sigma = la.norm(@view(R[k:n,k]))
 		phase = cis(angle(R[k,k]))
 		beta = inv(sigma * (sigma + abs(R[k,k])))
 		R[k,k] += sigma * phase
 
-		for j in k+1:N
-			tmp = la.dot(@view(R[k:N,k]), @view(R[k:N,j]))
+		for j in k+1:n
+			tmp = la.dot(@view(R[k:n,k]), @view(R[k:n,j]))
 			tmp *= beta
-			for i in k:N
+			for i in k:n
 				R[i,j] -= tmp * R[i,k]
 			end
 		end
 
-		for j in 1:N
-			tmp = la.dot(@view(R[k:N,k]), @view(Qt[k:N,j]))
+		for j in 1:n
+			tmp = la.dot(@view(R[k:n,k]), @view(Qt[k:n,j]))
 			tmp *= beta
-			for i in k:N
+			for i in k:n
 				Qt[i,j] -= tmp * R[i,k]
 			end
 		end
 
 		@inbounds R[k,k] = -scale * sigma * phase
-		@inbounds for i in k+1:N
+		@inbounds for i in k+1:n
 			R[i,k] = complex(0.0, 0.0)
 		end
 	end
 end
 
 # ╔═╡ 5e2b2de8-2530-480f-b911-ea8ce569bb0f
-function rq!(A::Matrix{T}, R::Matrix{T}, Qt::Matrix{T}) where T<:Complex
-	N = size(A, 2)
-
-	@inbounds for i in 1:N, j in 1:N
+function rq!(
+	A::AbstractMatrix{T},
+	R::AbstractMatrix{T},
+	Qt::AbstractMatrix{T},
+	n::Int,
+) where T<:Complex
+	@inbounds for i in 1:n, j in 1:n
 		tmp = complex(0.0, 0.0)
-		for k in i:N
+		for k in i:n
 			tmp += R[i,k] * conj(Qt[j,k])
 		end
 		A[i,j] = tmp
@@ -76,49 +83,49 @@ function rq!(A::Matrix{T}, R::Matrix{T}, Qt::Matrix{T}) where T<:Complex
 end
 
 # ╔═╡ ee08c69d-e40c-4596-92b9-5a5cd3a294b5
-function wilkinson(A::AbstractMatrix{T}) where T<:Complex
-	m = 0.5 * (A[1,1] + A[2,2])
-	p = A[1,1] * A[2,2] - A[1,2] * A[2,1]
+function wilkinson(a::T, b::T, c::T, d::T) where T<:Complex
+	# ┌     ┐
+	# │ a b │
+	# │ c d │
+	# └     ┘
+	m = 0.5 * (a + d)
+	p = a * d - b * c
 
-	z2 = m * m - p
-	r = abs(z2)
+	y = m * m - p
+	r = abs(y)
 	s = sqrt(r)
+	t = 0.5 * angle(y)
 
-	θ = angle(z2)
+	z = s * cis(t)
+	u = m - z
+	v = m + z
 
-	z_plus = s * cis(0.5θ)
-	z_minus = s * cis(0.5θ + π)
-
-	eigen_minus = m + z_minus
-	eigen_plus  = m + z_plus
-
-	if abs(eigen_minus - A[2,2]) < abs(eigen_plus - A[2,2])
-		return eigen_minus
-	else
-		return eigen_plus
-	end
+	return abs(u - d) < abs(v - d) ? u : v
 end
 
 # ╔═╡ 39ce686e-e072-44b8-b35a-5c9218a2d976
 la.eigen(copy(A0))
 
 # ╔═╡ b1d7f708-8ebe-4372-a117-f4ecf21d3e88
-let _A_ = copy(A0), _R_ = similar(_A_), _Qt_ = similar(_A_)
-	N = size(_A_, 2)
-	for _ in 1:16
-		eigen_guess = wilkinson(@view(_A_[N-1:N, N-1:N]))
-		@inbounds for i in 1:N
-			_A_[i,i] -= eigen_guess
-		end
+let A = copy(A0), R = similar(A), Qt = similar(A)
+	n = size(A, 2)
+	while 1 < n
+		while 0.0 < abs(A[n,n-1])
+			eigen_guess = wilkinson(A[n-1,n-1], A[n-1,n], A[n,n-1], A[n,n])
+			@inbounds for i in 1:n
+				A[i,i] -= eigen_guess
+			end
 
-		qr!(_A_, _R_, _Qt_)
-		rq!(_A_, _R_, _Qt_)
-
-		@inbounds for i in 1:N
-			_A_[i,i] += eigen_guess
+			qr!(A, R, Qt, n)
+			rq!(A, R, Qt, n)
+	
+			@inbounds for i in 1:n
+				A[i,i] += eigen_guess
+			end
 		end
+		n -= 1
 	end
-	print(_A_)
+	A
 end
 
 # ╔═╡ df96a77d-7dfd-4468-8690-c56bfc0fdf70
@@ -138,16 +145,13 @@ let (m, p) = (
 	0.5 * (B0[1,1] + B0[2,2]),
 	B0[1,1] * B0[2,2] - B0[1,2] * B0[2,1],
 )
-	z2 = m * m - p
-	r = abs(z2)
+	y = m * m - p
+	r = abs(y)
 	s = sqrt(r)
+	t = 0.5 * angle(y)
 
-	θ = angle(z2)
-
-	z_plus = s * cis(0.5θ)
-	z_minus = s * cis(0.5θ + π)
-
-	m + z_minus, m + z_plus
+	z = s * cis(t)
+	m - z, m + z
 end
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
