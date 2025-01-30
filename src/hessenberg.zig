@@ -59,20 +59,22 @@ fn eigen2(a: ComplexF64, b: ComplexF64, c: ComplexF64, d: ComplexF64, u: *Comple
     const p: ComplexF64 = Complex.sub(Complex.mul(a, d), Complex.mul(b, c));
     const y: ComplexF64 = Complex.sub(Complex.mul(m, m), p);
 
-    const r: f64 = Complex.abs(y);
-    const s: f64 = @sqrt(r);
+    const r: f64 = @sqrt(Complex.abs(y));
     const t: f64 = 0.5 * Complex.angle(y);
 
-    const z: ComplexF64 = Complex.mul(s, Complex.cis(t));
+    const z: ComplexF64 = Complex.mul(r, Complex.cis(t));
 
     u.* = Complex.sub(m, z);
     v.* = Complex.add(m, z);
 }
 
-fn eigen(w: []ComplexF64, A: [][]ComplexF64, R: [][]ComplexF64, Qt: [][]ComplexF64) void {
+const Errors = error{HessenbergEigenFail};
+
+pub fn eigen(w: []ComplexF64, A: [][]ComplexF64, R: [][]ComplexF64, Qt: [][]ComplexF64) !void {
     var n: usize = w.len;
     var p: usize = n - 1;
     var q: usize = n - 2;
+    var c: usize = 0; // Iteration protection
     var s: ComplexF64 = undefined; // Wilkinson shift
     var u: ComplexF64 = undefined; // eigenvalue for Wilkinson shift
     var v: ComplexF64 = undefined; // eigenvalue for Wilkinson shift
@@ -81,10 +83,11 @@ fn eigen(w: []ComplexF64, A: [][]ComplexF64, R: [][]ComplexF64, Qt: [][]ComplexF
         n -= 1;
         p -= 1;
         q -= 1;
+        c = 0;
     }) {
-        while (0.0 < Complex.abs(A[p][q])) {
+        while (c < 30 and 0.0 < Complex.abs2(A[p][q])) : (c += 1) {
             eigen2(A[q][q], A[q][p], A[p][q], A[p][p], &u, &v);
-            s = if (Complex.abs(Complex.sub(u, A[p][p])) < Complex.abs(Complex.sub(v, A[p][p]))) u else v;
+            s = if (Complex.abs2(Complex.sub(u, A[p][p])) < Complex.abs2(Complex.sub(v, A[p][p]))) u else v;
 
             for (0..n) |i| A[i][i] = Complex.sub(A[i][i], s);
 
@@ -92,7 +95,10 @@ fn eigen(w: []ComplexF64, A: [][]ComplexF64, R: [][]ComplexF64, Qt: [][]ComplexF
             rq(A, R, Qt, n);
 
             for (0..n) |i| A[i][i] = Complex.add(A[i][i], s);
+        } else {
+            if (c == 30) return error.HessenbergEigenFail;
         }
+
         w[p] = A[p][p];
     }
 
@@ -124,7 +130,7 @@ test "test" {
     const sol: []ComplexF64 = try ArrComplexF64.vector(N);
     defer ArrComplexF64.free(sol);
 
-    eigen(sol, A, R, Qt);
+    try eigen(sol, A, R, Qt);
 
     const ans: [5]ComplexF64 = .{
         complex(-3.09127567631315, -4.956778631380267),
@@ -135,8 +141,8 @@ test "test" {
     };
 
     for (ans, sol) |ans_val, sol_val| {
-        try testing.expectApproxEqAbs(ans_val.re, sol_val.re, 1e-12);
-        try testing.expectApproxEqAbs(ans_val.im, sol_val.im, 1e-12);
+        try testing.expectApproxEqAbs(ans_val.re, sol_val.re, 1e-13);
+        try testing.expectApproxEqAbs(ans_val.im, sol_val.im, 1e-13);
     }
 }
 
