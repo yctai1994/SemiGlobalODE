@@ -1,5 +1,3 @@
-const Backend = enum { chebyshev, newton };
-
 const Interval = struct {
     t0: f64,
     dt: f64,
@@ -112,6 +110,10 @@ const GridSamples = struct {
         allocator.free(self.vals);
         allocator.destroy(self);
     }
+
+    fn fillWith(self: *GridSamples, f: *const fn (t: f64) f64) void {
+        for (self.vals, self.grid.grid) |*v, t| v.* = f(t);
+    }
 };
 
 test "test" {
@@ -133,25 +135,47 @@ test "test" {
     defer source_sampling.deinit(allocator);
 }
 
-pub fn Polynomial(comptime T: type, comptime backend: Backend) type {
-    _ = .{ T, backend };
+const Backend = enum { chebyshev, newton };
 
+const Coefficients = struct {
+    // for Chebyshev: c[0..M-1]
+    // for Newton:    a[0..M-1]
+    data: []f64,
+
+    // explicit: only used by Newton-stability transform (length-4 mapping)
+    scale: f64,
+
+    fn deinit(self: *Coefficients, allocator: mem.Allocator) void {
+        allocator.free(self.data);
+        allocator.destroy(self);
+    }
+};
+
+fn Polynomial(comptime backend: Backend) type {
     return struct {
-        pub const Coeffs = struct {
-            // for chebyshev: c[0..M-1]
-            // for newton:    a[0..M-1]
-            data: []T,
-            // explicit: only used by newton-stability transform (length-4 mapping)
-            domain_scale: f64 = 1.0,
-        };
+        fn build(allocator: mem.Allocator, chebyshev: *const ChebyshevGrid, samples: *const GridSamples, interval: Interval) !*Coefficients {
+            _ = interval;
 
-        pub fn build(alloc: *mem.Allocator, y_nodes: []const f64, f: []const T, interval: Interval) !Coeffs {
-            _ = .{ alloc, y_nodes, f, interval };
+            if (chebyshev.grid.len != samples.grid.grid.len) return GridError.LengthMismatch;
+            if (chebyshev.grid.len != samples.vals.len) return GridError.LengthMismatch;
+
+            const self: *Coefficients = try allocator.create(Coefficients);
+            errdefer allocator.destroy(self);
+
+            self.data = try allocator.alloc(f64, chebyshev.grid.len);
+            errdefer allocator.free(self.data);
+
+            // scale is reserved for Newton domain scaling; currently always 1.0
+            self.scale = switch (backend) {
+                .chebyshev, .newton => 1.0,
+            };
+
+            return self;
         }
 
         // evaluate at normalized y (can be slightly outside [-1,1] if caller wants extrapolation)
-        pub fn eval(y: f64, coeffs: Coeffs, y_nodes: []const f64) T {
-            _ = .{ y, coeffs, y_nodes };
+        fn eval(y: f64, coeffs: *const Coefficients, chebyshev: *const ChebyshevGrid) f64 {
+            _ = .{ y, coeffs, chebyshev };
         }
     };
 }
