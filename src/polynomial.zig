@@ -30,30 +30,26 @@ const ChebyshevGrid = struct {
     grid: []f64,
 
     // boundary-including nodes y(l) = -cos( l*π / (M-1) )  (Eq. 76, J. Comp. Phys. 343, 368, 2017)
-    fn init(allocator: mem.Allocator, order: usize) !*ChebyshevGrid {
+    fn init(allocator: mem.Allocator, order: usize) !ChebyshevGrid {
         if (order < 2) return GridError.InvalidOrder;
 
-        const self: *ChebyshevGrid = try allocator.create(ChebyshevGrid);
-        errdefer allocator.destroy(self);
-
-        self.grid = try allocator.alloc(f64, order);
-        errdefer allocator.free(self.grid);
+        const grid: []f64 = try allocator.alloc(f64, order);
+        errdefer allocator.free(grid);
 
         const de: f64 = @floatFromInt(order - 1);
-        for (self.grid, 0..) |*ptr, ind| {
+        for (grid, 0..) |*ptr, ind| {
             const nu: f64 = @floatFromInt(ind);
             ptr.* = -@cos(math.pi * (nu / de));
         }
 
-        return self;
+        return .{ .grid = grid };
     }
 
-    fn deinit(self: *ChebyshevGrid, allocator: mem.Allocator) void {
+    inline fn deinit(self: *const ChebyshevGrid, allocator: mem.Allocator) void {
         allocator.free(self.grid);
-        allocator.destroy(self);
     }
 
-    fn chebyshevToSpace(self: *const ChebyshevGrid, space: *SpaceGrid, interval: Interval) !void {
+    fn chebyshevToSpace(self: *const ChebyshevGrid, space: *const SpaceGrid, interval: Interval) !void {
         if (space.grid.len != self.grid.len) return GridError.LengthMismatch;
         for (space.grid, self.grid) |*dest, src| dest.* = interval.chebyshevToSpace(src);
     }
@@ -63,24 +59,16 @@ const ChebyshevGrid = struct {
 const SpaceGrid = struct {
     grid: []f64,
 
-    fn initUninitialized(allocator: mem.Allocator, order: usize) !*SpaceGrid {
+    fn initUninitialized(allocator: mem.Allocator, order: usize) !SpaceGrid {
         if (order < 2) return GridError.InvalidOrder;
-
-        const self: *SpaceGrid = try allocator.create(SpaceGrid);
-        errdefer allocator.destroy(self);
-
-        self.grid = try allocator.alloc(f64, order);
-        errdefer allocator.free(self.grid);
-
-        return self;
+        return .{ .grid = try allocator.alloc(f64, order) };
     }
 
-    fn deinit(self: *SpaceGrid, allocator: mem.Allocator) void {
+    inline fn deinit(self: *const SpaceGrid, allocator: mem.Allocator) void {
         allocator.free(self.grid);
-        allocator.destroy(self);
     }
 
-    fn spaceToChebyshev(self: *const SpaceGrid, chebyshev: *ChebyshevGrid, interval: Interval) !void {
+    fn spaceToChebyshev(self: *const SpaceGrid, chebyshev: *const ChebyshevGrid, interval: Interval) !void {
         if (chebyshev.grid.len != self.grid.len) return GridError.LengthMismatch;
         for (chebyshev.grid, self.grid) |*dest, src| dest.* = interval.spaceToChebyshev(src);
     }
@@ -90,24 +78,16 @@ const SpaceGrid = struct {
 const GridSamples = struct {
     vals: []f64, // g( y[l] ) = f( t[l] ) values
 
-    fn initUninitialized(allocator: mem.Allocator, order: usize) !*GridSamples {
+    fn initUninitialized(allocator: mem.Allocator, order: usize) !GridSamples {
         if (order < 2) return GridError.InvalidOrder;
-
-        const self: *GridSamples = try allocator.create(GridSamples);
-        errdefer allocator.destroy(self);
-
-        self.vals = try allocator.alloc(f64, order);
-        errdefer allocator.free(self.vals);
-
-        return self;
+        return .{ .vals = try allocator.alloc(f64, order) };
     }
 
-    fn deinit(self: *GridSamples, allocator: mem.Allocator) void {
+    inline fn deinit(self: *const GridSamples, allocator: mem.Allocator) void {
         allocator.free(self.vals);
-        allocator.destroy(self);
     }
 
-    fn fillWith(self: *GridSamples, space: *const SpaceGrid, f: *const fn (t: f64) f64) !void {
+    fn fillWith(self: *const GridSamples, space: *const SpaceGrid, f: *const fn (t: f64) f64) !void {
         if (self.vals.len != space.grid.len) return GridError.LengthMismatch;
         for (self.vals, space.grid) |*v, t| v.* = f(t);
     }
@@ -123,17 +103,14 @@ const Coefficients = struct {
     // explicit: only used by Newton-stability transform (length-4 mapping)
     scale: f64,
 
-    fn deinit(self: *Coefficients, allocator: mem.Allocator) void {
+    inline fn deinit(self: *const Coefficients, allocator: mem.Allocator) void {
         allocator.free(self.data);
-        allocator.destroy(self);
     }
 };
 
 fn Polynomial(comptime backend: Backend) type {
     return struct {
-        fn build(allocator: mem.Allocator, chebyshev: *const ChebyshevGrid, samples: *const GridSamples, interval: Interval) !*Coefficients {
-            _ = interval;
-
+        fn build(allocator: mem.Allocator, chebyshev: *const ChebyshevGrid, samples: *const GridSamples) !Coefficients {
             if (chebyshev.grid.len != samples.vals.len) return GridError.LengthMismatch;
 
             const data: []f64 = try allocator.alloc(f64, samples.vals.len);
@@ -155,17 +132,12 @@ fn Polynomial(comptime backend: Backend) type {
                 },
             }
 
-            const coeff: *Coefficients = try allocator.create(Coefficients);
-            errdefer allocator.destroy(coeff);
-
-            coeff.data = data;
-
-            // scale is reserved for Newton domain scaling; currently always 1.0
-            coeff.scale = switch (backend) {
-                .chebyshev, .newton => 1.0,
+            return .{
+                .data = data,
+                .scale = switch (backend) {
+                    .chebyshev, .newton => 1.0,
+                },
             };
-
-            return coeff;
         }
 
         // evaluate at normalized y (can be slightly outside [-1,1] if caller wants extrapolation)
@@ -200,16 +172,16 @@ test "Newton polynomial interpolates samples at Chebyshev grids" {
 
     const interval: Interval = try Interval.init(0.0, 0.7);
 
-    const chebyshev_grid: *ChebyshevGrid = try ChebyshevGrid.init(allocator, order);
+    const chebyshev_grid: ChebyshevGrid = try ChebyshevGrid.init(allocator, order);
     defer chebyshev_grid.deinit(allocator);
 
     // check Chebyshev endpoints
     try testing.expectApproxEqAbs(-1.0, chebyshev_grid.grid[0], 0.0);
     try testing.expectApproxEqAbs(1.0, chebyshev_grid.grid[order - 1], 0.0);
 
-    const space_grid: *SpaceGrid = try SpaceGrid.initUninitialized(allocator, order);
+    const space_grid: SpaceGrid = try SpaceGrid.initUninitialized(allocator, order);
     defer space_grid.deinit(allocator);
-    try chebyshev_grid.chebyshevToSpace(space_grid, interval);
+    try chebyshev_grid.chebyshevToSpace(&space_grid, interval);
 
     // check mapped-space endpoints
     try testing.expectApproxEqAbs(interval.t0, space_grid.grid[0], 1e-15);
@@ -220,17 +192,17 @@ test "Newton polynomial interpolates samples at Chebyshev grids" {
         try testing.expect(t0 < t1);
     }
 
-    const grid_samples: *GridSamples = try GridSamples.initUninitialized(allocator, order);
+    const grid_samples: GridSamples = try GridSamples.initUninitialized(allocator, order);
     defer grid_samples.deinit(allocator);
-    try grid_samples.fillWith(space_grid, simpleSourceForTest);
+    try grid_samples.fillWith(&space_grid, simpleSourceForTest);
 
     const NewtonPoly: type = Polynomial(.newton);
-    const coeffs: *Coefficients = try NewtonPoly.build(allocator, chebyshev_grid, grid_samples, interval);
+    const coeffs: Coefficients = try NewtonPoly.build(allocator, &chebyshev_grid, &grid_samples);
     defer coeffs.deinit(allocator);
 
     // Check p( y[l] ) == f( t[l] ) at all grid points
     for (chebyshev_grid.grid, grid_samples.vals) |y, f| {
-        try testing.expectApproxEqAbs(f, NewtonPoly.eval(y, coeffs, chebyshev_grid), 1e-15);
+        try testing.expectApproxEqAbs(f, NewtonPoly.eval(y, &coeffs, &chebyshev_grid), 1e-15);
     }
 }
 
